@@ -1,0 +1,317 @@
+Liverpie 0.3
+~~~~~~~~~~~~
+
+Language-Independent IVR Proxy (a MUA = Messed-Up Acronym)
+
+by Alex Deva (alxx@indigenious.ro) - Nov. 2008
+
+Featuring some code written by Jonathan Palley in his Telegraph
+(http://code.google.com/p/telegraph/wiki/Main)
+
+
+
+WHAT IS IT?
+-----------
+Liverpie is a proxy. On one end, it talks to FreeSWITCH; on the other, it
+talks to your web application by sending HTTP requests to it.
+The requests contain events coming from FreeSWITCH and the responses from the
+webapp should contain FreeSWITCH commands, and expected events.
+
+That makes Liverpie language-independent on the application end. That means
+you can write your IVR application in any language you prefer or even use
+simple text files.
+It also means that it lets you access all the features that FreeSWITCH offers
+via mod_event_socket.
+
+
+WHAT...?!
+---------
+FreeSWITCH is <quote>an open source telephony platform designed to facilitate
+the creation of voice and chat driven products scaling from a soft-phone up to
+a soft-switch.
+It can be used as a simple switching engine, a PBX, a media gateway or a media
+server to host IVR applications using simple scripts or XML to control the
+callflow.</quote>
+
+FreeSWITCH is here: http://www.freeswitch.org
+
+To create dynamic voice applications with FreeSWITCH, one way is to use its
+mod_event_socket in outbound or inbound mode. The thing is like AGI + AMI on
+steroids, for those familiar with Asterisk. It connects to a remote
+application server via TCP/IP and receives commands there, sending back
+events. (Like: 'answer the line' and 'done'.)
+
+There have been many attempts to make language-specific libraries, to aid in
+the purpose of creating voice applications with this method. Most of them are
+incomplete (in the sense that they do not implement everything that FreeSWITCH
+offers), and they all offer their particular approach on the architecture of
+an IVR (Interactive Voice Response system).
+
+
+Liverpie borrows a lot from Telegraph, so...
+
+WHAT IS RIGHT WITH TELEGRAPH?
+-----------------------------
+
+    A. It handles communication with FreeSwitch very well.
+    B. It solves the worse problem of Rails-based IVR tools: scaling up
+       (because it uses EventMachine instead of Webrick or such toys)
+    C. It attempts to help web developers enter the world of IVR development.
+    D. Using a Channel model to originate stuff is really cool.
+
+    
+WHAT IS WRONG WITH TELEGRAPH?
+-----------------------------
+    A. Its documentation, at least at the time of this writing, is incomplete. I mean,
+       crucial things are missing from it. It's not documentation, it's only
+       the starting point for days of research.
+    B. It's harder to use than an upside-down chair.
+    C. Its devoted goal is to bring the MVC approach to writing voice
+       applications. I believe that is completely out of whack. 
+	   In the case of IVRs, conceptually, they are nothing more but
+       simple state machines and the MVC paradigm simply doesn't fit to them.
+    
+
+HOW IS LIVERPIE BETTER?
+-----------------------
+OK, here's how.
+    A. You don't have to learn a new API (much less a new language).
+    B. You don't have to learn a new paradigm for writing an IVR. An IVR is
+       basically a state machine. All you have to do is persist your
+       application's state inside your web session (yes, Liverpie takes good
+       care of your cookies) and write it as you please.
+    C. You have full access to all FreeSWITCH commands and don't have to learn
+       how they are referred in a specific language... because you have to use
+       them exactly as the FreeSWITCH documentation says. There's no extra
+       layer of implementation.
+    D. Livepie will help you scale up! You can have a FreeSWITCH cluster, a
+       Liverpie cluster and a cluster of (web) application servers.
+       
+    You no longer have to keep the server that speaks to FreeSWITCH on the
+same machine as the application itself, like it's the case with Telegraph,
+RAGI et co., because they talk by HTTP, not by direct function calls
+(Dispatcher, etc.)
+    
+    
+BUT WHAT DOES IT REALLY DO?
+---------------------------
+Actually quite little. Liverpie is a server for FreeSWITCH, and a client for a
+webapp. (That makes it a proxy.)
+
+In its first capacity, it can receive events and give commands to FreeSWITCH.
+
+In its second, it forwards the stuff that FreeSWITCH puts out to the webapp,
+in the form of POST request parameters; it parses the received reply and
+passes it on to FreeSWITCH.
+
+The replies are in YAML format and they also contain the trigger for the next
+request (see USAGE below).
+
+The exception to that rule are DTMF events, for which the webapp may return
+nothing at all.
+
+
+REQUIREMENTS
+------------
+    * ruby 1.8
+    * Linux, OSX, Windows (if you really must, but for God's sake, get your
+                           act together and stop acting like a child.)
+    * eventmachine gem (install with: gem install eventmachine)
+
+
+INSTALLATION
+------------
+    1. Download and unzip Liverpie:
+    
+        wget http://www.liverpie.com/liverpie-0.1.zip
+        unzip liverpie-0.1.tar.gz
+        
+    2. See startup options:
+        cd liverpie-0.1
+        bin/liverpie -h
+
+
+CONFIGURATION AND USAGE
+-----------------------
+Liverpie works as a proxy in the following way: when a connection is opened to
+it from FreeSWITCH (so when a call to the associated extension is made and the
+dialplan executes the "socket" application), Liverpie first sends a predefined
+set of commands to FreeSWITCH. (These are hardcoded. If you absolutely need
+some other sort of channel initialization, edit @initial_commands in
+liverpie_server.rb).
+
+You have to write your own web-based state machine, in the language of your
+choice. That means that when you load the same URL of your webapp, it will
+change its state and reply differently, changing its state request after
+request, based on the POST parameters, until the thread of the state machine
+execution is logically finished (presumably with a hangup command). Your state
+machine can be a huge "case" or "switch" statement, or it can use the concept
+of "next_step" as my example below, or you can do it however you please.
+
+The idea is that you can keep the machine state in the session, since Liverpie
+and your cookies are buddies (as opposed to on the lunch menu).
+
+Once FreeSWITCH responds, your webapp will be called at the given URL, to
+reset its state machine.
+
+Then it will be called again, as the first step of the IVR.
+
+It is then the responsability of your web application to return a YAML
+containing the following information:
+    1. Indication of what next FreeSWITCH event will trigger the next call to
+       the state machine webapp;
+    2. A FreeSWITCH socket command, as described in the FS docs:
+        * http://wiki.freeswitch.org/wiki/Event_Socket
+        * http://wiki.freeswitch.org/wiki/Event_socket_outbound
+        * http://wiki.freeswitch.org/wiki/Mod_commands
+    
+    Of course the YAML must be plain text, without HTML formatting or any
+    other sort.
+    
+    Here is an example of a YAML that will send a wave playback command to
+    FreeSWITCH, and ask it to wait for an event whose name signifies that the
+    last execution has completed:
+    
+    --- 
+    msg: |-
+      SendMsg 
+      call-command: execute
+      execute-app-name: playback
+      execute-app-arg: ivr/8000/ivr-welcome_to_freeswitch.wav
+      event-lock:true
+    expected_value: CHANNEL_EXECUTE_COMPLETE
+    expected_key: event_name
+    
+    Here is an example of a YAML that tells FreeSWITCH to wait a bit:
+    
+    --- 
+    msg: api sleep 20000
+    expected_value: api/response
+    expected_key: content_type
+    
+    
+
+    1. Configure Liverpie. Edit config/liverpie.yml (it's a YAML file, so
+       remember that the usual restriction apply when editing such file; for
+       one, never use TABs or CRLF). The options are documented.
+    
+    2. Configure FreeSWITCH. If you don't already have a testing extension for
+       your IVR in FreeSWITCH, add the following in conf/dialplan/default.xml,
+       replacing 1.2.3.4 with the IP of the machine running Liverpie (also the
+       port if necessary) and 5001 with your destination number:
+    
+        <!-- liverpie test -->
+        <extension name="liverpie_test">
+           <condition field="destination_number" expression="5001">
+             <action application="answer" />
+             <action application="socket" data="1.2.3.4:8084 async full" />
+           </condition>
+        </extension>
+
+    3. Start Liverpie.
+        - to start in console: bin/liverpie [-v] (will log to console not file)
+        - to start as daemon: bin/liverpie -d[v] (will log only to file)
+        - to stop: bin/liverpie -a stop
+
+    4. Start your web application (has to run on the IP and port specified in
+       liverpie.yml).
+    
+    5. Test your webapp in the browser; call the reset method, then call the
+       state machine method repeatedly and make sure the state of the
+       application changes and gives the correct YAML responses.
+    
+    6. Call the destination number (5001 in my example above) and watch your
+       webapp log, as well as the FreeSWITCH console.
+
+Parameters
+----------
+Liverpie will always maintain a hash of parameters received from FreeSWITCH
+and send them over to the webapp via POST, as regular HTTP parameters.
+
+At the first request, that hash is empty; it is then MERGED (not REPLACED)
+with every new set of parameters received from FreeSWITCH. That means that
+the values will always be refreshed, but that you will have values which 
+have persisted from previous calls.
+
+I am not yet sure whether that merging is needed, but it seemed like it was.
+
+DTMF codes
+----------
+If you specify a webapp_dtmf_uri in your config file, then everytime Liverpie
+receives a DTMF event from Freeswitch, it will call that method with a
+parameter named "dtmf_code". The value of that parameter will be the DTMF
+code received by Freeswitch.
+
+You can return a YAML command (like with the state machine runner method),
+or nothing at all.
+
+*Important*: Even if you use the 'read' command and use channel variables
+in order to retrieve the pushed keys, the DTMF events will still be
+issued. You are free to ignore them then, or ignore them altogether by
+setting webapp_dtmf_uri to empty in your Liverpie config file.
+
+EXAMPLES
+--------
+To keep this file smaller, I've only the examples in the website, here:
+http://www.liverpie.com/examples.html
+
+FUTURE
+------
+From what I hear, EventMachine is a thing of beauty; however, I plan to port
+Liverpie entirely into Erlang. After all, it is a telecom application with the
+potential of becoming critical, and Erlang is just the thing for that.
+
+  * Erlang: http://www.erlang.org/
+
+  * Impressive quote from Wikipedia:
+<quote source='http://en.wikipedia.org/wiki/Yaws_(web_server)'>Because Yaws
+uses Erlang's lightweight threading system, it performs well under high
+concurrency. A load test conducted in 2002 comparing Yaws and Apache found 
+that with the hardware tested, Apache 2.0.39 with the worker MPM failed at
+4000 concurrent connections, while Yaws continued functioning with over 80,000
+concurrent connections.</quote>
+
+
+CREDITS
+-------
+Jonathan Palley, author of Telegraph for FreeSWITCH, wrote the part that
+instantiates an EventMachine and creates a server ready for FreeSWITCH.
+I wrote everything else and changed some of Jonathan's code.
+
+    Contact me at: alxx@indigenious.ro
+            Yahoo Messenger: alex_deva2002
+            Skype: alex_deva2002
+            ICQ: 2723153
+            Google Talk: alexandru.deva
+            Phone: +4 0722 878 295.
+
+I'm available for consultancy regarding installation and usage of Liverpie.
+
+Adeel Ansari helped with the Java example and also worked with me to fix
+a bug that prevented some Java webservers that don't always send a cookie
+to work with Liverpie.
+
+
+11. LICENSE
+-----------
+The MIT License
+
+Copyright (c) 2008 Alex Deva, parts of code written by Jonathan Palley
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

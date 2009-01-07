@@ -1,0 +1,12 @@
+configuration:
+    # bind_ip, bind_port - where to start the local server
+    bind_ip: 0.0.0.0
+    bind_port: 8084
+    # webapp_ip, webapp_port - where your webapp is
+    webapp_ip: 192.168.0.19
+    webapp_port: 3002
+    # the URI to call the state machine, and the URI to reset it
+    webapp_uri: '/ivr/state_machine'
+    webapp_reset_uri: '/ivr/reset'
+    # the URI to call when a DTMF pops up (optional)
+    webapp_dtmf_uri: '/ivr/dtmf'
